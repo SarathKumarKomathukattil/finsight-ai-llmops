@@ -34,60 +34,130 @@ def validate_and_store(store, cik, kind, content, validator):
 
     return data, snapshot
 
-def download_latest_10q(client: SECClient,store: SnapshotStore,cik: str,submissions: dict,) -> dict:
-        """Download, validate and preserve the latest 10-Q."""
+def select_filings(submissions: dict, limits: dict) -> list[dict]:
+    """Select recent SEC filings according to configured form limits."""
 
-        recent = submissions["filings"]["recent"]
+    recent = submissions["filings"]["recent"]
 
-        matches = [
-            i for i, form in enumerate(recent["form"])
-            if form == "10-Q"
-        ]
+    required = (
+    "form",
+    "accessionNumber",
+    "filingDate",
+    "reportDate",
+    "primaryDocument",
+)
 
-        if not matches:
-            raise ValueError("No 10-Q found in recent SEC filings")
+    # SEC stores filing information in parallel arrays.
+    lengths = {len(recent[key]) for key in required}
 
-        # Choose the latest filing date.
-        i = max(matches, key=lambda index: recent["filingDate"][index])
+    if len(lengths) != 1:
+        raise ValueError("Inconsistent SEC filing metadata")
 
-        accession = recent["accessionNumber"][i]
-        document = recent["primaryDocument"][i]
-        filing_date = recent["filingDate"][i]
+    selected = []
 
-        url = build_filing_url(cik, accession, document)
+    for form, limit in limits.items():
 
-        content = client.get_filing(cik, accession, document)
+        if form not in {"10-K", "10-Q", "8-K"}:
+            raise ValueError(f"Unsupported filing form: {form}")
 
-        # Reject obviously invalid or incomplete HTML responses.
-        if len(content) < 1024 or b"<html" not in content[:8192].lower():
-            store.save_snapshot(
-                cik,
-                "filings",
-                content,
-                False,
-                accession_number=accession,
-            )
-            raise ValueError("Invalid SEC filing HTML response")
+        if type(limit) is not int or limit < 0 or limit > 20:
+            raise ValueError(f"Invalid filing limit for {form}")
 
-        snapshot = store.save_snapshot(
-            cik,
-            "filings",
-            content,
-            True,
-            accession_number=accession,
+        matches = []
+
+        for i, filing_form in enumerate(recent["form"]):
+
+            if filing_form == form:
+                matches.append({
+                    "form": form,
+                    "accession_number": recent["accessionNumber"][i],
+                    "filing_date": recent["filingDate"][i],
+                    "report_date": recent["reportDate"][i] or None,
+                    "primary_document": recent["primaryDocument"][i],
+                })
+
+        # SEC filing dates use YYYY-MM-DD, so string sorting works.
+        matches.sort(
+            key=lambda filing: (
+                filing["filing_date"],
+                filing["accession_number"],
+            ),
+            reverse=True,
         )
 
-        return {
-            "url": url,
-            "form": "10-Q",
-            "accession_number": accession,
-            "primary_document": document,
-            "filing_date": filing_date,
-            **snapshot,
-        }
+        chosen = matches[:limit]
 
+        if len(chosen) < limit:
+            logger.warning(
+                "%s: requested %s filings, found %s",
+                form,
+                limit,
+                len(chosen),
+            )
 
-def ingest_company(client: SECClient,store: SnapshotStore,ticker: str,cik: str,refresh_facts: bool = False,download_10q: bool = False,) -> dict:
+        selected.extend(chosen)
+
+    if not selected:
+        raise ValueError("No matching SEC filings selected")
+
+    return selected
+
+def download_filing(
+    client: SECClient,
+    store: SnapshotStore,
+    cik: str,
+    filing: dict,
+) -> dict:
+    """Download and preserve one original SEC filing."""
+
+    accession = filing["accession_number"]
+    document = filing["primary_document"]
+
+    url = build_filing_url(cik, accession, document)
+
+    content = client.get_filing(cik, accession, document)
+
+    # Basic HTML sanity check.
+    valid = (
+        len(content) >= 1024
+        and b"<html" in content[:8192].lower()
+    )
+
+    snapshot = store.save_snapshot(
+        cik,
+        "filings",
+        content,
+        valid,
+        accession_number=accession,
+    )
+
+    if not valid:
+        raise ValueError(
+            f"Invalid HTML for SEC filing {accession}"
+        )
+
+    return {
+        **filing,
+        "url": url,
+        **snapshot,
+    }
+
+def download_latest_10q(
+    client: SECClient,
+    store: SnapshotStore,
+    cik: str,
+    submissions: dict,
+) -> dict:
+    """Preserve the existing latest-10-Q functionality."""
+
+    filing = select_filings(
+        submissions,
+        {"10-Q": 1},
+    )[0]
+
+    return download_filing(client, store, cik, filing)
+
+def ingest_company(client: SECClient,store: SnapshotStore,ticker: str,cik: str,refresh_facts: bool = False,download_10q: bool = False,filing_limits: dict | None = None) -> dict:
     """Download company data and detect newly observed filings."""
 
     cik = normalize_cik(cik)
@@ -168,6 +238,26 @@ def ingest_company(client: SECClient,store: SnapshotStore,ticker: str,cik: str,r
                 submissions,
             )
 
+
+        # Download configured 10-K, 10-Q, and 8-K documents.
+        if filing_limits is not None:
+
+            selected = select_filings(submissions, filing_limits)
+
+            manifest["sources"]["filings"] = []
+
+            for filing in selected:
+
+                saved = download_filing(
+                    client,
+                    store,
+                    cik,
+                    filing,
+                )
+
+                manifest["sources"]["filings"].append(saved)
+        
+
         # 5. Prepare the updated checkpoint
         state = {
             "accessions": sorted(known | set(accessions)),
@@ -216,6 +306,11 @@ def main():
     action="store_true",
     help="Download the latest 10-Q for each configured company",)
 
+    parser.add_argument(
+    "--download-filings",
+    action="store_true",
+    help="Download configured 10-K, 10-Q and 8-K filings",)
+
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -239,6 +334,33 @@ def main():
 
     # Normalize and remove duplicate tickers
     tickers = list(dict.fromkeys(ticker.strip().upper() for ticker in tickers))
+
+    # Prevent both download options from running together.
+    if args.download_filings and args.download_10q:
+        parser.error("Choose either --download-filings or --download-10q")
+
+    filing_limits = None
+
+    if args.download_filings:
+
+        filing_limits = config.get("filings")
+
+        if not isinstance(filing_limits, dict) or not filing_limits:
+            raise ValueError("Invalid filing configuration")
+
+        supported_forms = {"10-K", "10-Q", "8-K"}
+
+        for form, limit in filing_limits.items():
+
+            if form not in supported_forms:
+                raise ValueError(f"Unsupported filing form: {form}")
+
+            if type(limit) is not int or not 0 <= limit <= 20:
+                raise ValueError(f"Invalid filing limit for {form}")
+
+        if not any(filing_limits.values()):
+            raise ValueError("At least one filing limit must be positive")
+    
 
     # 2. Initialize storage and SEC client
     store = SnapshotStore(PROJECT_ROOT / "data")
@@ -284,6 +406,7 @@ def main():
                     cik,
                     refresh_facts=args.refresh_facts,
                     download_10q=args.download_10q,
+                    filing_limits=filing_limits,
                 )
 
                 print(f"{ticker}: " f"{len(result['new_filings'])} new filings")
@@ -295,6 +418,20 @@ def main():
                         f"{ticker}: saved 10-Q "
                         f"{filing['accession_number']} "
                         f"to {filing['path']}")
+
+                if args.download_filings:
+
+                    filings = result["sources"]["filings"]
+
+                    print(f"{ticker}: {len(filings)} filings downloaded")
+
+                    for filing in filings:
+
+                        print(
+                            f"{filing['form']} | "
+                            f"{filing['filing_date']} | "
+                            f"{filing['accession_number']}"
+                        )
 
             except Exception:
                 failures.append(ticker)

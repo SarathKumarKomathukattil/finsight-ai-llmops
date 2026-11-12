@@ -1,0 +1,32 @@
+
+[
+  {
+    "id": "revenue_fy2026",
+    "ticker": "NVDA",
+    "question": "What factors contributed to NVIDIA's revenue growth in fiscal 2026?",
+    "relevant_chunk_ids": [
+      "0001045810-26-000021_part_ii_item_7_1",
+      "0001045810-26-000021_part_ii_item_7_5",
+      "0001045810-26-000021_part_ii_item_7_13"
+    ]
+  },
+  {
+    "id": "supply_chain",
+    "ticker": "NVDA",
+    "question": "What are NVIDIA's major supply-chain risks?",
+    "relevant_chunk_ids": [
+      "0001045810-25-000230_part_ii_item_1a_0",
+      "0001045810-26-000021_part_i_item_1a_20"
+    ]
+  },
+  {
+    "id": "export_restrictions",
+    "ticker": "NVDA",
+    "question": "How do US export restrictions affect NVIDIA's business?",
+    "relevant_chunk_ids": [
+      "0001045810-26-000075_part_ii_item_1a_11",
+      "0001045810-26-000075_part_ii_item_1a_21",
+      "0001045810-26-000021_part_i_item_1a_69"
+    ]
+  }
+]
