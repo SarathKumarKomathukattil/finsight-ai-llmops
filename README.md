@@ -1,5 +1,7 @@
 # FinSight AI — Financial Research & LLMOps
 
+[![FinSight AI CI](https://github.com/SarathKumarKomathukattil/finsight-ai-llmops/actions/workflows/ci.yml/badge.svg)](https://github.com/SarathKumarKomathukattil/finsight-ai-llmops/actions/workflows/ci.yml)
+
 An evidence-backed financial research application built with **Python, FastAPI, LangGraph, MCP, SEC EDGAR/XBRL, PostgreSQL/pgvector, Sentence Transformers, Ollama and MLflow**.
 
 ## What it does
@@ -25,7 +27,7 @@ Local validation on November 13, 2026: **24 pytest tests passed**. A successful 
 
 ## Run locally
 
-Requires Python 3.12, configured PostgreSQL/pgvector, a running Ollama instance with the project's configured LLM, and the application environment variables. Install dependencies from `requirements.txt` after the source and dependency manifest are published.
+Requires Python 3.12, configured PostgreSQL/pgvector, a running Ollama instance with the project's configured LLM, and the application environment variables. Copy `.env.example` to `.env`, supply your actual SEC identity, PostgreSQL credentials and installed Ollama model, then install the project's dependencies from `requirements.txt`. The full dependency file is currently a snapshot of the original Windows/CUDA environment; `requirements-ci.txt` is the portable offline test subset.
 
 ```powershell
 python -m mlflow server --host 127.0.0.1 --port 5000
@@ -54,7 +56,19 @@ python -m pytest tests/ -q
 
 ### CI
 
-The [GitHub Actions workflow](.github/workflows/ci.yml) runs syntax checks and pytest on Python 3.12 once the source code and `requirements.txt` are pushed. Remote CI is not considered passing until GitHub displays a green run.
+The [GitHub Actions workflow](.github/workflows/ci.yml) installs `requirements-ci.txt`, checks Python syntax and runs offline pytest tests on Python 3.12. [CI run #3 passed](https://github.com/SarathKumarKomathukattil/finsight-ai-llmops/actions/runs/43300974907). The SEC live integration test is excluded from CI to avoid external network dependence.
+
+## Demonstration screenshots
+
+The following screenshots were recorded from a successful local LangGraph research run. Copy the images into `docs/images/` to make the previews visible in GitHub.
+
+**MLflow trace:** `docs/images/mlflow-trace.png`
+
+![MLflow trace with LangGraph nodes](docs/images/mlflow-trace.png)
+
+**MLflow tracing dashboard:** `docs/images/mlflow-dashboard.png`
+
+![FinSight MLflow successful trace](docs/images/mlflow-dashboard.png)
 
 ## Engineering notes
 
