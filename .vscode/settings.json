@@ -1,6 +1,0 @@
-
-{
-    "files.readonlyInclude": {
-        "data/raw/**": true
-    }
-}
