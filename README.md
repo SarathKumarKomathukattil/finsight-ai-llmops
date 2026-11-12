@@ -70,6 +70,45 @@ The following screenshots were recorded from a successful local LangGraph resear
 
 ![FinSight MLflow successful trace](docs/images/mlflow-dashboard.png)
 
+## Benchmark results (local runs, November 13, 2026)
+
+### SEC retrieval
+
+Three hand-labeled NVIDIA questions covering revenue growth, supply-chain risk and export restrictions:
+
+| Metric | Observed score |
+|---|---:|
+| Hit@10 | 1.0000 (100%) |
+| MRR@10 | 1.0000 |
+| nDCG@10 | 0.8591 |
+| Number of questions | 3 |
+
+Embedding model: `BAAI/bge-small-en-v1.5`. Reranker: `BAAI/bge-reranker-base`.
+
+### End-to-end financial research regression
+
+One question about NVIDIA FY2026 revenue growth, evaluated through the existing FastAPI endpoint:
+
+| Metric | Observed score |
+|---|---:|
+| Correct response status | 1/1 |
+| Expected financial strings present | 4/4 |
+| Citation metadata check | Passed |
+| Wall-clock request latency | 23.59 seconds |
+
+These are **small baselines**, not estimates of general QA accuracy. The financial check tests expected values appearing in the answer, not complete numeric reasoning, and citation metadata validation does not prove claim-level groundedness. The 23.59-second latency is one local observation, not a median or load test.
+
+**Reproduce:** Start FastAPI and MLflow on ports 8000 and 5000, then run:
+
+```powershell
+python -m finsight.evaluate_retrieval
+python -m finsight.evaluate_research
+```
+
+Both evaluation scripts log metrics and run artifacts to MLflow. See `finsight/eval_cases.json` for the three retrieval questions and their labeled evidence IDs.
+
+**Benchmark screenshots:** `docs/images/retrieval-benchmark.png` and `docs/images/research-benchmark.png` (add these image files to the repository to enable previews).
+
 ## Engineering notes
 
 Financial figures originate from SEC facts, not model-generated calculations. SEC narrative claims are cited to filing passages. Live news is metadata, not independently verified article content. The repository is a research engineering demonstration, not a trading or personalized investment-advice service.
