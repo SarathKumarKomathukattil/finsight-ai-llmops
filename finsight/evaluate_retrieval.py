@@ -3,6 +3,8 @@
 
 import json
 import math
+
+import mlflow
 from pathlib import Path
 
 from sentence_transformers import SentenceTransformer, CrossEncoder
@@ -94,6 +96,40 @@ def main():
     print(f"Hit@10:  {sum(s[0] for s in scores) / count:.4f}")
     print(f"MRR@10:  {sum(s[1] for s in scores) / count:.4f}")
     print(f"nDCG@10: {sum(s[2] for s in scores) / count:.4f}")
+
+
+    # Log measured scores and dataset provenance, without changing retrieval.
+    metrics = {
+        "hit_at_10": sum(s[0] for s in scores) / count,
+        "mrr_at_10": sum(s[1] for s in scores) / count,
+        "ndcg_at_10": sum(s[2] for s in scores) / count,
+    }
+
+    mlflow.set_tracking_uri("http://127.0.0.1:5000")
+    mlflow.set_experiment("FinSight-Retrieval-Benchmark")
+
+    with mlflow.start_run(run_name="retrieval-baseline"):
+        mlflow.log_param("question_count", count)
+        mlflow.log_param("embedding_model", MODEL_NAME)
+        mlflow.log_param("reranker", RERANKER_NAME)
+        mlflow.log_metrics(metrics)
+        mlflow.log_dict(
+            {
+                "dataset": cases,
+                "per_question_scores": [
+                    {
+                        "id": case["id"],
+                        "hit_at_10": score[0],
+                        "mrr_at_10": score[1],
+                        "ndcg_at_10": score[2],
+                    }
+                    for case, score in zip(cases, scores)
+                ],
+            },
+            "retrieval_evaluation.json",
+        )
+
+    print("\nBenchmark saved to MLflow.")
 
 
 if __name__ == "__main__":
