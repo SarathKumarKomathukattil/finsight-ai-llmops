@@ -43,3 +43,7 @@ data/cache/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local-only project files
+backups/
+data/
